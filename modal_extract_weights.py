@@ -164,7 +164,7 @@ def extract_and_predict(fold: int):
         for name, arr in weights.items():
             f.create_dataset(name, data=arr)
 
-    # Generate all 1000 sequences (same logic as modal_shorkie.py)
+    # Generate all 1000 sequences (deterministic)
     print("Generating 1000 sequences...")
     dna_strings = generate_sequences()
     sequences = one_hot_encode(dna_strings)  # (N, T, 4) — saved to disk

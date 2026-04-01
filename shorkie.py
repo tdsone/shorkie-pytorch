@@ -623,11 +623,10 @@ class Shorkie(nn.Module):
 
     @staticmethod
     def from_tf_checkpoint(config: dict, h5_path: str) -> "Shorkie":
-        """Load a Shorkie model with weights converted from a TF/Keras H5 checkpoint.
+        """Load a Shorkie model with weights from an original TF/Keras H5 checkpoint.
 
-        Supports two H5 formats:
-        - Keras checkpoint: nested model_weights/layer_name/layer_name/param:0
-        - Flat extracted: layer_name/param:0  (from modal_extract_weights.py)
+        The checkpoint must contain the full 170-channel conv_dna kernel
+        (4 nucleotide + 1 reserved + 165 species channels).
         """
         model = Shorkie(config)
         _load_tf_weights(model, h5_path)
@@ -638,30 +637,8 @@ class Shorkie(nn.Module):
 # Weight conversion: TF H5 → PyTorch
 # ──────────────────────────────────────────────────────────────
 
-def _detect_h5_format(h5root):
-    """Detect whether H5 is Keras-nested or flat extracted format."""
-    keys = list(h5root.keys())
-    if "model_weights" in keys:
-        return "keras"
-    # Flat format has keys like "conv1d/kernel:0"
-    if any("/" in k for k in keys):
-        return "flat"
-    # Check if it's a keras-style but already at model_weights level
-    first = keys[0] if keys else ""
-    if first and isinstance(h5root[first], h5py.Group):
-        inner = h5root[first]
-        if first in inner:
-            return "keras"
-    return "flat"
-
-
 def _get_tf_layer(h5root, name):
-    """Get the parameter dict for a named TF layer from an H5 file.
-
-    Supports two H5 formats:
-    - Keras checkpoint: model_weights/layer/layer/param:0 (two-level nesting)
-    - Extracted weights: layer/param:0 (one-level nesting)
-    """
+    """Get the parameter dict for a named TF layer from a Keras H5 checkpoint."""
     root = h5root["model_weights"] if "model_weights" in h5root else h5root
     grp = root[name]
 

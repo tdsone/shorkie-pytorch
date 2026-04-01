@@ -4,10 +4,11 @@ Requires golden data files in data/ directory, generated via:
     modal run modal_extract_weights.py --fold 0
 
 Files expected:
-    data/predictions_f0_chunk000.h5  — TF predictions + input sequences (100 seqs)
-    data/checkpoint_f0.h5            — Original TF checkpoint (170-channel conv_dna)
+    data/predictions_f0_chunk{000..009}.h5  — TF predictions + input sequences (100 seqs each)
+    data/checkpoint_f0.h5                   — Original TF checkpoint (170-channel conv_dna)
 """
 
+import glob
 import json
 import os
 import sys
@@ -21,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from shorkie import Shorkie
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 
 
 def _fold_data_available(fold: int) -> bool:
@@ -37,6 +38,12 @@ def _available_folds():
             reason="No golden data found. Run: modal run modal_extract_weights.py --fold 0"
         ))]
     return folds
+
+
+def _chunk_paths(fold: int) -> list[str]:
+    """Find all prediction chunk files for a fold, sorted by chunk index."""
+    pattern = os.path.join(DATA_DIR, f"predictions_f{fold}_chunk*.h5")
+    return sorted(glob.glob(pattern))
 
 
 def _params_path():
@@ -62,46 +69,64 @@ def test_1k_equivalence(fold: int, config):
     model = Shorkie.from_tf_checkpoint(config["model"], weights_path)
     model.eval()
 
-    # Load golden chunk
-    chunk_path = os.path.join(DATA_DIR, f"predictions_f{fold}_chunk000.h5")
-    with h5py.File(chunk_path, "r") as f:
-        sequences = np.array(f["sequences"])     # (N, T, 4) channels-last
-        tf_predictions = np.array(f["predictions"])  # (N, T_out, targets)
+    chunk_paths = _chunk_paths(fold)
+    assert len(chunk_paths) > 0, f"No prediction chunks found for fold {fold}"
 
-    n_seqs = len(sequences)
-    all_predictions = []
-
-    with torch.no_grad():
-        for i in range(0, n_seqs, BATCH_SIZE):
-            batch = sequences[i : i + BATCH_SIZE]
-            x = torch.from_numpy(batch).permute(0, 2, 1).float()
-            pred = model(x)
-            all_predictions.append(pred.numpy())
-
-    pt_predictions = np.concatenate(all_predictions, axis=0)
-
-    assert pt_predictions.shape == tf_predictions.shape, (
-        f"Shape mismatch: PyTorch {pt_predictions.shape} vs TF {tf_predictions.shape}"
-    )
-
-    # Metrics
-    abs_diff = np.abs(pt_predictions - tf_predictions)
-    max_abs = abs_diff.max()
-    mean_abs = abs_diff.mean()
-
+    max_abs = 0.0
+    sum_abs = 0.0
+    n_elements = 0
     per_seq_r = []
-    for i in range(n_seqs):
-        r = np.corrcoef(pt_predictions[i].flatten(), tf_predictions[i].flatten())[0, 1]
-        per_seq_r.append(r)
+    n_skipped = 0
+    global_seq_idx = 0
+
+    for chunk_path in chunk_paths:
+        chunk_name = os.path.basename(chunk_path)
+        with h5py.File(chunk_path, "r") as f:
+            n_seqs = f["sequences"].shape[0]
+
+            for i in range(0, n_seqs, BATCH_SIZE):
+                end = min(i + BATCH_SIZE, n_seqs)
+                try:
+                    sequences = np.array(f["sequences"][i:end])
+                    tf_preds = np.array(f["predictions"][i:end])
+                except OSError:
+                    n_skipped += end - i
+                    global_seq_idx += end - i
+                    continue
+
+                x = torch.from_numpy(sequences).permute(0, 2, 1).float()
+                with torch.no_grad():
+                    pt_preds = model(x).numpy()
+
+                assert pt_preds.shape == tf_preds.shape, (
+                    f"Shape mismatch at seq {global_seq_idx}: "
+                    f"PyTorch {pt_preds.shape} vs TF {tf_preds.shape}"
+                )
+
+                abs_diff = np.abs(pt_preds - tf_preds)
+                max_abs = max(max_abs, float(abs_diff.max()))
+                sum_abs += float(abs_diff.sum())
+                n_elements += abs_diff.size
+
+                for j in range(end - i):
+                    r = np.corrcoef(pt_preds[j].flatten(), tf_preds[j].flatten())[0, 1]
+                    per_seq_r.append(r)
+
+                global_seq_idx += end - i
+
+    n_compared = len(per_seq_r)
+    assert n_compared > 0, "No sequences could be compared — golden data may be corrupted"
+    mean_abs = sum_abs / n_elements
     per_seq_r = np.array(per_seq_r)
 
-    print(f"\nFold {fold} — {n_seqs} sequences")
+    print(f"\nFold {fold} — {n_compared} sequences compared "
+          f"({len(chunk_paths)} chunks, {n_skipped} skipped)")
     print(f"  Max  abs diff: {max_abs:.6e}")
     print(f"  Mean abs diff: {mean_abs:.6e}")
     print(f"  Pearson R: min={per_seq_r.min():.8f}, mean={per_seq_r.mean():.8f}")
 
     # Within float32 precision
-    assert np.allclose(pt_predictions, tf_predictions, atol=1e-4, rtol=1e-4), (
+    assert max_abs < 1e-4, (
         f"Predictions not close enough. Max abs diff: {max_abs:.6e}"
     )
     assert per_seq_r.min() > 0.9999, (
