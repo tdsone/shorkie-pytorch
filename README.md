@@ -14,6 +14,22 @@ For S. cerevisiae (R64), the species index is 109, so channel 114 is set to 1 ac
 
 The PyTorch model accepts standard 4-channel one-hot DNA input and expands it to the full 170-channel representation internally.
 
+## Downloading checkpoints
+
+The original TF/Keras checkpoints are hosted on Google Cloud Storage by the [Shorkie paper authors](https://github.com/calico/shorkie-paper). Download the fine-tuned Shorkie checkpoints (one per cross-validation fold):
+
+- [f0](https://storage.googleapis.com/seqnn-share/shorkie/f0/model_best.h5) | [f1](https://storage.googleapis.com/seqnn-share/shorkie/f1/model_best.h5) | [f2](https://storage.googleapis.com/seqnn-share/shorkie/f2/model_best.h5) | [f3](https://storage.googleapis.com/seqnn-share/shorkie/f3/model_best.h5) | [f4](https://storage.googleapis.com/seqnn-share/shorkie/f4/model_best.h5) | [f5](https://storage.googleapis.com/seqnn-share/shorkie/f5/model_best.h5) | [f6](https://storage.googleapis.com/seqnn-share/shorkie/f6/model_best.h5) | [f7](https://storage.googleapis.com/seqnn-share/shorkie/f7/model_best.h5)
+
+The pretrained language model (Shorkie LM) is also available:
+
+- [Shorkie LM](https://storage.googleapis.com/seqnn-share/shorkie_lm/train/model_best.h5)
+
+Place the downloaded checkpoint in the `data/` directory, e.g.:
+
+```bash
+wget -O data/checkpoint_f0.h5 https://storage.googleapis.com/seqnn-share/shorkie/f0/model_best.h5
+```
+
 ## Usage
 
 ```python
