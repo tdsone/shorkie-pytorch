@@ -719,23 +719,15 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
         p = _get_tf_layer(root, _conv_name(conv_i)); conv_i += 1
         tf_kernel = p["kernel:0"]  # (K, C_in, C_out) in TF
         expected_in = SPECIES_OFFSET + NUM_SPECIES  # 170
-        if tf_kernel.shape[1] == expected_in:
-            model.conv_dna.conv.weight.data = torch.from_numpy(
-                np.transpose(tf_kernel, (2, 1, 0))
-            )
-            model.conv_dna.conv.bias.data = torch.from_numpy(p["bias:0"])
-        elif tf_kernel.shape[1] == DNA_CHANNELS:
-            print(f"Warning: conv_dna kernel has {tf_kernel.shape[1]} input channels "
-                  f"(expected {expected_in}). Loading into first {DNA_CHANNELS} channels only.")
-            model.conv_dna.conv.weight.data[:, :DNA_CHANNELS, :] = torch.from_numpy(
-                np.transpose(tf_kernel, (2, 1, 0))
-            )
-            model.conv_dna.conv.bias.data = torch.from_numpy(p["bias:0"])
-        else:
+        if tf_kernel.shape[1] != expected_in:
             raise ValueError(
-                f"conv_dna kernel has unexpected input channels: {tf_kernel.shape[1]} "
-                f"(expected {expected_in} or {DNA_CHANNELS})"
+                f"conv_dna kernel has {tf_kernel.shape[1]} input channels "
+                f"(expected {expected_in}). Use the original TF checkpoint, not extracted weights."
             )
+        model.conv_dna.conv.weight.data = torch.from_numpy(
+            np.transpose(tf_kernel, (2, 1, 0))
+        )
+        model.conv_dna.conv.bias.data = torch.from_numpy(p["bias:0"])
 
         # ── res_tower ──
         for block in model.res_tower.blocks:

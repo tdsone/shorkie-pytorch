@@ -52,7 +52,7 @@ NUCLEAR_CHROMS = [f"chr{x}" for x in [
 
 
 def generate_sequences(seq_len=SEQ_LEN, seed=SEED):
-    """Generate 500 random + 500 genomic DNA sequences (same as modal_shorkie.py)."""
+    """Generate 500 random + 500 genomic DNA sequences (deterministic)."""
     import numpy as np
     import pysam
 

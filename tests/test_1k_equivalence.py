@@ -6,7 +6,6 @@ Requires golden data files in data/ directory, generated via:
 Files expected:
     data/predictions_f0_chunk000.h5  — TF predictions + input sequences (100 seqs)
     data/checkpoint_f0.h5            — Original TF checkpoint (170-channel conv_dna)
-    data/model_weights_f0.h5         — Extracted weights (fallback, 4-channel conv_dna)
 """
 
 import json
@@ -26,12 +25,9 @@ BATCH_SIZE = 8
 
 
 def _fold_data_available(fold: int) -> bool:
-    has_weights = (
-        os.path.exists(os.path.join(DATA_DIR, f"checkpoint_f{fold}.h5"))
-        or os.path.exists(os.path.join(DATA_DIR, f"model_weights_f{fold}.h5"))
-    )
+    weights = os.path.join(DATA_DIR, f"checkpoint_f{fold}.h5")
     chunk = os.path.join(DATA_DIR, f"predictions_f{fold}_chunk000.h5")
-    return has_weights and os.path.exists(chunk)
+    return os.path.exists(weights) and os.path.exists(chunk)
 
 
 def _available_folds():
@@ -61,10 +57,8 @@ def config():
 def test_1k_equivalence(fold: int, config):
     """Compare PyTorch predictions against TF golden predictions for a specific fold."""
 
-    # Load model — prefer original checkpoint (170-ch conv_dna), fall back to extracted
-    checkpoint_path = os.path.join(DATA_DIR, f"checkpoint_f{fold}.h5")
-    extracted_path = os.path.join(DATA_DIR, f"model_weights_f{fold}.h5")
-    weights_path = checkpoint_path if os.path.exists(checkpoint_path) else extracted_path
+    # Load model from original TF checkpoint (170-channel conv_dna)
+    weights_path = os.path.join(DATA_DIR, f"checkpoint_f{fold}.h5")
     model = Shorkie.from_tf_checkpoint(config["model"], weights_path)
     model.eval()
 
