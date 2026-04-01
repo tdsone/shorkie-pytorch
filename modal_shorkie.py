@@ -57,6 +57,10 @@ NUCLEAR_CHROMS = [f"chr{x}" for x in [
     "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI",
 ]]
 
+NUM_SPECIES = 165
+SPECIES_OFFSET = 5
+R64_SPECIES_INDEX = 109
+
 
 def generate_sequences(seq_len: int = SEQ_LEN, seed: int = SEED):
     """Generate 500 random + 500 genomic DNA sequences deterministically."""
@@ -121,6 +125,17 @@ def one_hot_encode(dna_strings):
     return arr
 
 
+def species_encode(sequences_4ch):
+    """Expand (N, T, 4) one-hot DNA to (N, T, 170) with S. cerevisiae species encoding."""
+    import numpy as np
+    n, seq_len, _ = sequences_4ch.shape
+    total_channels = SPECIES_OFFSET + NUM_SPECIES  # 170
+    arr = np.zeros((n, seq_len, total_channels), dtype=sequences_4ch.dtype)
+    arr[:, :, :4] = sequences_4ch
+    arr[:, :, SPECIES_OFFSET + R64_SPECIES_INDEX] = 1.0
+    return arr
+
+
 @app.function(
     image=image,
     gpu="L4",
@@ -155,10 +170,16 @@ def predict_fold(fold: int):
     with open("/model/params.json") as f:
         params = json.load(f)
 
+    # Build model with 170 input features to match pretrained species-encoded weights
+    params["model"]["num_features"] = SPECIES_OFFSET + NUM_SPECIES  # 170
     seqnn = SeqNN(params["model"])
     weights_path = f"/model/f{fold}/model_best.h5"
     print(f"  Loading weights from {weights_path}")
     seqnn.restore(weights_path)
+
+    # Species-encode input for inference
+    sequences_170 = species_encode(sequences)
+    print(f"  Species-encoded shape: {sequences_170.shape}")
 
     # Run batched inference
     print("Running inference...")
@@ -169,7 +190,7 @@ def predict_fold(fold: int):
     for i in range(n_batches):
         start = i * BATCH_SIZE
         end = min(start + BATCH_SIZE, n_seqs)
-        batch = sequences[start:end]
+        batch = sequences_170[start:end]
         pred = seqnn.model(batch, training=False).numpy()
         predictions.append(pred)
         if (i + 1) % 25 == 0 or i == n_batches - 1:

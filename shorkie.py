@@ -12,6 +12,9 @@ from dataclasses import dataclass
 
 
 DNA_CHANNELS = 4  # num of channels when one-hot encoding DNA
+NUM_SPECIES = 165  # number of species in the pretrained language model
+SPECIES_OFFSET = 5  # channels 0-3 = nucleotides, channel 4 = reserved, channels 5+ = species
+R64_SPECIES_INDEX = 109  # S. cerevisiae (R64) index in the species encoding
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,12 @@ class SeqNNBlock(ABC):
 # ──────────────────────────────────────────────────────────────
 
 class ConvDNA(nn.Module, SeqNNBlock):
-    """Initial convolution on one-hot DNA."""
+    """Initial convolution on one-hot DNA.
+
+    Accepts the full species-encoded input (170 channels by default):
+    channels 0-3 = one-hot nucleotides, channel 4 = reserved,
+    channels 5-169 = one-hot species indicator.
+    """
 
     def __init__(
         self,
@@ -42,10 +50,11 @@ class ConvDNA(nn.Module, SeqNNBlock):
         kernel_size,
         norm_type,
         activation,
+        in_channels=SPECIES_OFFSET + NUM_SPECIES,  # 170
     ) -> None:
         super().__init__()
         self.conv = nn.Conv1d(
-            in_channels=DNA_CHANNELS,
+            in_channels=in_channels,
             kernel_size=kernel_size,
             out_channels=filters,
             bias=True,
@@ -563,8 +572,26 @@ class Shorkie(nn.Module):
         head_cfg = config["head"]
         self.head = nn.Linear(out_channels, head_cfg["units"])
 
+    def _expand_species_encoding(self, x: torch.Tensor) -> torch.Tensor:
+        """Expand (B, 4, T) one-hot DNA to (B, 170, T) with species encoding.
+
+        Matches baskerville's dna_1hot_mask_species_encoding:
+        - Channels 0-3: nucleotide one-hot (copied from input)
+        - Channel 4: reserved (zeros)
+        - Channels 5-169: one-hot species indicator (channel 5+R64_SPECIES_INDEX=114 set to 1)
+        """
+        B, C, T = x.shape
+        total_channels = SPECIES_OFFSET + NUM_SPECIES  # 170
+        x_expanded = x.new_zeros(B, total_channels, T)
+        x_expanded[:, :DNA_CHANNELS, :] = x
+        x_expanded[:, SPECIES_OFFSET + R64_SPECIES_INDEX, :] = 1.0
+        return x_expanded
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, 4, T)  channels-first one-hot DNA
+
+        # Expand to species-encoded input: (B, 4, T) -> (B, 170, T)
+        x = self._expand_species_encoding(x)
 
         # Conv DNA
         x = self.conv_dna(x)          # (B, C, T)
@@ -691,15 +718,24 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
         # ── conv_dna ──
         p = _get_tf_layer(root, _conv_name(conv_i)); conv_i += 1
         tf_kernel = p["kernel:0"]  # (K, C_in, C_out) in TF
-        # Handle pretrained checkpoint with different input channels
-        if tf_kernel.shape[1] != DNA_CHANNELS:
-            print(f"Warning: conv_dna kernel has {tf_kernel.shape[1]} input channels "
-                  f"(expected {DNA_CHANNELS}). Skipping conv_dna weight loading.")
-        else:
+        expected_in = SPECIES_OFFSET + NUM_SPECIES  # 170
+        if tf_kernel.shape[1] == expected_in:
             model.conv_dna.conv.weight.data = torch.from_numpy(
                 np.transpose(tf_kernel, (2, 1, 0))
             )
             model.conv_dna.conv.bias.data = torch.from_numpy(p["bias:0"])
+        elif tf_kernel.shape[1] == DNA_CHANNELS:
+            print(f"Warning: conv_dna kernel has {tf_kernel.shape[1]} input channels "
+                  f"(expected {expected_in}). Loading into first {DNA_CHANNELS} channels only.")
+            model.conv_dna.conv.weight.data[:, :DNA_CHANNELS, :] = torch.from_numpy(
+                np.transpose(tf_kernel, (2, 1, 0))
+            )
+            model.conv_dna.conv.bias.data = torch.from_numpy(p["bias:0"])
+        else:
+            raise ValueError(
+                f"conv_dna kernel has unexpected input channels: {tf_kernel.shape[1]} "
+                f"(expected {expected_in} or {DNA_CHANNELS})"
+            )
 
         # ── res_tower ──
         for block in model.res_tower.blocks:
