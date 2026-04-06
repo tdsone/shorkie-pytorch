@@ -4,6 +4,8 @@ A PyTorch reimplementation of the Shorkie model (a yeast sequence-to-expression 
 - [Paper](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1)
 - [Github](https://github.com/calico/shorkie-paper)
 
+The code here heavily copies/ports parts of the [baskerville-yeast](https://github.com/calico/baskerville-yeast)/[baskerville](https://github.com/calico/baskerville) and [westminster](https://github.com/calico/westminster) repository by David Kelley and colleagues.
+
 ## Usage
 
 ### Prerequisites
