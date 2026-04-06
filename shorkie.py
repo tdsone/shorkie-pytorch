@@ -1,12 +1,10 @@
 import json
-import math
 
 import h5py
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from abc import ABC
 from contextvars import ContextVar
 from dataclasses import dataclass
 
@@ -26,20 +24,12 @@ class BuildConfig:
 
 _current_config: ContextVar[BuildConfig] = ContextVar("_current_config")
 
-
-class SeqNNBlock(ABC):
-    @classmethod
-    def build_module(cls, config: dict) -> "SeqNNBlock":
-        del config["name"]
-        return cls(**config)
-
-
 # ──────────────────────────────────────────────────────────────
 # Convolution blocks  (channels-first: B, C, T)
 # ──────────────────────────────────────────────────────────────
 
 
-class ConvDNA(nn.Module, SeqNNBlock):
+class ConvDNA(nn.Module):
     """Initial convolution on one-hot DNA.
 
     Accepts the full species-encoded input (170 channels by default):
@@ -68,7 +58,7 @@ class ConvDNA(nn.Module, SeqNNBlock):
         return self.conv(x)
 
 
-class ConvNAC(nn.Module, SeqNNBlock):
+class ConvNAC(nn.Module):
     """Norm → Activation → Conv1d  (channels-first)."""
 
     def __init__(self, in_channels, out_channels, kernel_size) -> None:
@@ -94,7 +84,7 @@ class ConvNAC(nn.Module, SeqNNBlock):
         return x
 
 
-class ResTowerBlock(nn.Module, SeqNNBlock):
+class ResTowerBlock(nn.Module):
     def __init__(
         self, in_channels, out_channels, num_convs, dropout, pool_size, kernel_size
     ) -> None:
@@ -125,7 +115,7 @@ class ResTowerBlock(nn.Module, SeqNNBlock):
         return x, pre_pool
 
 
-class ResTower(nn.Module, SeqNNBlock):
+class ResTower(nn.Module):
     def __init__(
         self,
         filters_init,
@@ -361,7 +351,7 @@ class TransformerBlock(nn.Module):
         return x
 
 
-class TransformerTower(nn.Module, SeqNNBlock):
+class TransformerTower(nn.Module):
     def __init__(
         self,
         key_size,
@@ -431,7 +421,7 @@ class SeparableConv1d(nn.Module):
         return x.permute(0, 2, 1)
 
 
-class UNetConv(nn.Module, SeqNNBlock):
+class UNetConv(nn.Module):
     """U-Net upsampling block: upsample current, add skip, separable conv."""
 
     def __init__(
@@ -493,7 +483,7 @@ class UNetConv(nn.Module, SeqNNBlock):
 # ──────────────────────────────────────────────────────────────
 
 
-class Cropping1D(nn.Module, SeqNNBlock):
+class Cropping1D(nn.Module):
     def __init__(self, cropping) -> None:
         super().__init__()
         self.cropping = cropping
