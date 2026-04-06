@@ -4,12 +4,20 @@ A PyTorch reimplementation of the Shorkie model (a yeast sequence-to-expression 
 - [Paper](https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1)
 - [Github](https://github.com/calico/shorkie-paper)
 
-
 ## Usage
 
+### Prerequisites
+1. Clone the repo
+2. Run `uv sync` to install all required packages.
+3. Get a model checkpoint (see [Downloading checkpoints](#downloading-checkpoints))
+
+### Make your first prediction
+See [demo.ipynb](demo.ipynb) for a runnable example.
 ```python
 from shorkie import Shorkie
-import json, torch
+import json
+import random
+import torch
 
 with open("data/shorkie_params.json") as f:
     config = json.load(f)
@@ -17,10 +25,27 @@ with open("data/shorkie_params.json") as f:
 model = Shorkie.from_tf_checkpoint(config["model"], "data/checkpoint_f0.h5")
 model.eval()
 
-# Input: (batch, 4, seq_len) one-hot DNA
-x = torch.randn(1, 4, 16384)
+BASES = "ACGT"
+BASE_TO_IDX = {b: i for i, b in enumerate(BASES)}
+
+
+def one_hot_encode(seq: str) -> torch.Tensor:
+    t = torch.zeros(4, len(seq))
+    for i, ch in enumerate(seq):
+        t[BASE_TO_IDX[ch], i] = 1.0
+    return t
+
+
+def random_dna_sequence(length: int) -> str:
+    return "".join(random.choices(BASES, k=length))
+
+
+sequences = torch.stack([one_hot_encode(random_dna_sequence(16384)) for _ in range(5)])
+
 with torch.no_grad():
-    y = model(x)  # (1, 896, 5215)
+    y = model(sequences)  # (5, 896, 5215)
+
+print(f"{y.shape=}")
 ```
 
 ## Downloading checkpoints
