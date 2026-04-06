@@ -1,0 +1,21 @@
+shorkie-pytorch
+Copyright 2025 Timon Schneider
+
+This project is a PyTorch reimplementation of the Shorkie model, originally
+developed in TensorFlow/Keras. The model architecture and training methodology
+are based on the following work:
+
+  Shorkie: a yeast sequence-to-expression model
+  Chao et al.
+  https://www.biorxiv.org/content/10.1101/2025.09.19.677475v1
+
+The original TensorFlow implementation is available at:
+  https://github.com/calico/shorkie-paper (Apache-2.0)
+  https://github.com/calico/baskerville-yeast (Apache-2.0)
+
+Both original repositories are copyright Calico Life Sciences LLC and licensed
+under the Apache License, Version 2.0. A copy of the Apache License is included
+in this distribution as LICENSE-APACHE.
+
+The PyTorch reimplementation (new code in this repository) is copyright
+Timon Schneider and licensed under the MIT License. See LICENSE.txt.
