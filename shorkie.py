@@ -13,7 +13,9 @@ from dataclasses import dataclass
 
 DNA_CHANNELS = 4  # num of channels when one-hot encoding DNA
 NUM_SPECIES = 165  # number of species in the pretrained language model
-SPECIES_OFFSET = 5  # channels 0-3 = nucleotides, channel 4 = reserved, channels 5+ = species
+SPECIES_OFFSET = (
+    5  # channels 0-3 = nucleotides, channel 4 = reserved, channels 5+ = species
+)
 R64_SPECIES_INDEX = 109  # S. cerevisiae (R64) index in the species encoding
 
 
@@ -35,6 +37,7 @@ class SeqNNBlock(ABC):
 # ──────────────────────────────────────────────────────────────
 # Convolution blocks  (channels-first: B, C, T)
 # ──────────────────────────────────────────────────────────────
+
 
 class ConvDNA(nn.Module, SeqNNBlock):
     """Initial convolution on one-hot DNA.
@@ -136,9 +139,7 @@ class ResTower(nn.Module, SeqNNBlock):
     ) -> None:
         super().__init__()
 
-        FILTERS_MULT = np.exp(
-            np.log(filters_end / filters_init) / (repeat - 1)
-        )
+        FILTERS_MULT = np.exp(np.log(filters_end / filters_init) / (repeat - 1))
 
         def _round(x):
             return int(np.round(x / divisible_by) * divisible_by)
@@ -175,11 +176,13 @@ class ResTower(nn.Module, SeqNNBlock):
 # Transformer blocks  (channels-last: B, T, C)
 # ──────────────────────────────────────────────────────────────
 
+
 def positional_features_central_mask(positions, feature_size, seq_length):
     """Central-mask positional features (matching TF baskerville)."""
     pow_rate = np.exp(np.log(seq_length + 1) / feature_size).astype("float32")
-    center_widths = pow_rate ** torch.arange(1, feature_size + 1, dtype=torch.float32,
-                                             device=positions.device)
+    center_widths = pow_rate ** torch.arange(
+        1, feature_size + 1, dtype=torch.float32, device=positions.device
+    )
     center_widths = center_widths - 1  # (feature_size,)
     return (center_widths > torch.abs(positions).unsqueeze(-1)).float()
 
@@ -189,7 +192,9 @@ def positional_features(positions, feature_size, seq_length, symmetric=False):
     num_components = 1 if symmetric else 2
     num_basis_per_class = feature_size // num_components
 
-    embeddings = positional_features_central_mask(positions, num_basis_per_class, seq_length)
+    embeddings = positional_features_central_mask(
+        positions, num_basis_per_class, seq_length
+    )
 
     if not symmetric:
         embeddings = torch.cat(
@@ -258,17 +263,21 @@ class MultiheadAttention(nn.Module):
     def forward(self, x):
         B, T, _ = x.shape
 
-        q = self._to_multihead(self.q_layer(x), self._key_size)   # (B,H,T,K)
-        k = self._to_multihead(self.k_layer(x), self._key_size)   # (B,H,T,K)
+        q = self._to_multihead(self.q_layer(x), self._key_size)  # (B,H,T,K)
+        k = self._to_multihead(self.k_layer(x), self._key_size)  # (B,H,T,K)
         v = self._to_multihead(self.v_layer(x), self._value_size)  # (B,H,T,V)
 
-        q = q * (self._key_size ** -0.5)
+        q = q * (self._key_size**-0.5)
 
         # Content logits
-        content_logits = torch.matmul(q + self.r_w_bias, k.transpose(-2, -1))  # (B,H,T,T)
+        content_logits = torch.matmul(
+            q + self.r_w_bias, k.transpose(-2, -1)
+        )  # (B,H,T,T)
 
         # Relative position logits
-        distances = torch.arange(-T + 1, T, dtype=torch.float32, device=x.device).unsqueeze(0)
+        distances = torch.arange(
+            -T + 1, T, dtype=torch.float32, device=x.device
+        ).unsqueeze(0)
         pos_enc = positional_features(
             distances, self._num_position_features, T, symmetric=False
         )  # (1, 2T-1, num_pos_features)
@@ -276,7 +285,9 @@ class MultiheadAttention(nn.Module):
         if self.training:
             pos_enc = F.dropout(pos_enc, p=self._positional_dropout_rate)
 
-        r_k = self._to_multihead(self.r_k_layer(pos_enc), self._key_size)  # (1,H,2T-1,K)
+        r_k = self._to_multihead(
+            self.r_k_layer(pos_enc), self._key_size
+        )  # (1,H,2T-1,K)
 
         if self._content_position_bias:
             relative_logits = torch.matmul(q + self.r_r_bias, r_k.transpose(-2, -1))
@@ -291,9 +302,9 @@ class MultiheadAttention(nn.Module):
         if self.training:
             weights = F.dropout(weights, p=self._attention_dropout_rate)
 
-        output = torch.matmul(weights, v)          # (B,H,T,V)
-        output = output.permute(0, 2, 1, 3)        # (B,T,H,V)
-        output = output.reshape(B, T, -1)           # (B,T,H*V)
+        output = torch.matmul(weights, v)  # (B,H,T,V)
+        output = output.permute(0, 2, 1, 3)  # (B,T,H,V)
+        output = output.reshape(B, T, -1)  # (B,T,H*V)
 
         return self.embedding_layer(output)
 
@@ -376,16 +387,18 @@ class TransformerTower(nn.Module, SeqNNBlock):
     def _set_channels(self, channels: int):
         if self.blocks is not None:
             return
-        self.blocks = nn.ModuleList([
-            TransformerBlock(
-                channels=channels,
-                key_size=self._key_size,
-                heads=self._heads,
-                num_position_features=self._num_position_features,
-                dropout=self._dropout,
-            )
-            for _ in range(self._repeat)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    channels=channels,
+                    key_size=self._key_size,
+                    heads=self._heads,
+                    num_position_features=self._num_position_features,
+                    dropout=self._dropout,
+                )
+                for _ in range(self._repeat)
+            ]
+        )
 
     def forward(self, x: torch.Tensor):
         if self.blocks is None:
@@ -398,6 +411,7 @@ class TransformerTower(nn.Module, SeqNNBlock):
 # ──────────────────────────────────────────────────────────────
 # U-Net upsampling  (channels-last: B, T, C)
 # ──────────────────────────────────────────────────────────────
+
 
 class SeparableConv1d(nn.Module):
     """Depthwise separable conv1d (channels-last I/O)."""
@@ -478,6 +492,7 @@ class UNetConv(nn.Module, SeqNNBlock):
 # Cropping
 # ──────────────────────────────────────────────────────────────
 
+
 class Cropping1D(nn.Module, SeqNNBlock):
     def __init__(self, cropping) -> None:
         super().__init__()
@@ -494,15 +509,8 @@ class Cropping1D(nn.Module, SeqNNBlock):
 # Full model
 # ──────────────────────────────────────────────────────────────
 
-class Shorkie(nn.Module):
-    module_library: dict[str, type] = {
-        "conv_dna": ConvDNA,
-        "res_tower": ResTower,
-        "transformer_tower": TransformerTower,
-        "unet_conv": UNetConv,
-        "Cropping1D": Cropping1D,
-    }
 
+class Shorkie(nn.Module):
     def __init__(self, config: dict) -> None:
         super().__init__()
         self.config = config
@@ -527,7 +535,9 @@ class Shorkie(nn.Module):
 
         # Compute filter sizes per res_tower block (needed for UNet skip dims)
         rt = rt_cfg
-        fmult = np.exp(np.log(rt["filters_end"] / rt["filters_init"]) / (rt["repeat"] - 1))
+        fmult = np.exp(
+            np.log(rt["filters_end"] / rt["filters_init"]) / (rt["repeat"] - 1)
+        )
         _round = lambda x: int(np.round(x / rt["divisible_by"]) * rt["divisible_by"])
         self._skip_channels = []
         rep_f = rt["filters_init"]
@@ -553,13 +563,15 @@ class Shorkie(nn.Module):
         self.unet_convs = nn.ModuleList()
         for i, uc in enumerate(unet_cfgs):
             skip_ch = self._skip_channels[-(i + 1)]
-            self.unet_convs.append(UNetConv(
-                channels=out_channels,
-                skip_channels=skip_ch,
-                kernel_size=uc["kernel_size"],
-                upsample_conv=uc["upsample_conv"],
-                bn_momentum=config["bn_momentum"],
-            ))
+            self.unet_convs.append(
+                UNetConv(
+                    channels=out_channels,
+                    skip_channels=skip_ch,
+                    kernel_size=uc["kernel_size"],
+                    upsample_conv=uc["upsample_conv"],
+                    bn_momentum=config["bn_momentum"],
+                )
+            )
 
         # ── Build Cropping1D ──
         crop_cfg = [c for c in trunk_cfg if c["name"] == "Cropping1D"][0]
@@ -594,13 +606,13 @@ class Shorkie(nn.Module):
         x = self._expand_species_encoding(x)
 
         # Conv DNA
-        x = self.conv_dna(x)          # (B, C, T)
+        x = self.conv_dna(x)  # (B, C, T)
 
         # Res tower — saves pre-pool reprs (channels-first)
         x, reprs = self.res_tower(x)  # x: (B, C, T'), reprs: list of (B, C_i, T_i)
 
         # Switch to channels-last for transformer + rest
-        x = x.permute(0, 2, 1)        # (B, T', C)
+        x = x.permute(0, 2, 1)  # (B, T', C)
 
         # Transformer tower
         x = self.transformer_tower(x)  # (B, T', C)
@@ -636,6 +648,7 @@ class Shorkie(nn.Module):
 # ──────────────────────────────────────────────────────────────
 # Weight conversion: TF H5 → PyTorch
 # ──────────────────────────────────────────────────────────────
+
 
 def _get_tf_layer(h5root, name):
     """Get the parameter dict for a named TF layer from a Keras H5 checkpoint."""
@@ -693,7 +706,8 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
             return "separable_conv1d" if i == 0 else f"separable_conv1d_{i}"
 
         # ── conv_dna ──
-        p = _get_tf_layer(root, _conv_name(conv_i)); conv_i += 1
+        p = _get_tf_layer(root, _conv_name(conv_i))
+        conv_i += 1
         tf_kernel = p["kernel:0"]  # (K, C_in, C_out) in TF
         expected_in = SPECIES_OFFSET + NUM_SPECIES  # 170
         if tf_kernel.shape[1] != expected_in:
@@ -709,27 +723,34 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
         # ── res_tower ──
         for block in model.res_tower.blocks:
             # conv0: BN -> GELU -> Conv
-            _load_bn(block.conv0.norm, _get_tf_layer(root, _bn_name(bn_i))); bn_i += 1
-            _load_conv1d(block.conv0.conv, _get_tf_layer(root, _conv_name(conv_i))); conv_i += 1
+            _load_bn(block.conv0.norm, _get_tf_layer(root, _bn_name(bn_i)))
+            bn_i += 1
+            _load_conv1d(block.conv0.conv, _get_tf_layer(root, _conv_name(conv_i)))
+            conv_i += 1
 
             # conv_stack (1 layer for num_convs=2)
             for conv_nac in block.conv_stack:
-                _load_bn(conv_nac.norm, _get_tf_layer(root, _bn_name(bn_i))); bn_i += 1
-                _load_conv1d(conv_nac.conv, _get_tf_layer(root, _conv_name(conv_i))); conv_i += 1
+                _load_bn(conv_nac.norm, _get_tf_layer(root, _bn_name(bn_i)))
+                bn_i += 1
+                _load_conv1d(conv_nac.conv, _get_tf_layer(root, _conv_name(conv_i)))
+                conv_i += 1
 
             # Scale
-            sp = _get_tf_layer(root, _scale_name(scale_i)); scale_i += 1
-            block.res_scale.data = torch.from_numpy(
-                sp["scale:0"]
-            ).unsqueeze(1)  # (C,) -> (C,1)
+            sp = _get_tf_layer(root, _scale_name(scale_i))
+            scale_i += 1
+            block.res_scale.data = torch.from_numpy(sp["scale:0"]).unsqueeze(
+                1
+            )  # (C,) -> (C,1)
 
         # ── transformer_tower ──
         for tblock in model.transformer_tower.blocks:
             # Attention LN
-            _load_ln(tblock.attn_norm, _get_tf_layer(root, _ln_name(ln_i))); ln_i += 1
+            _load_ln(tblock.attn_norm, _get_tf_layer(root, _ln_name(ln_i)))
+            ln_i += 1
 
             # MHA
-            mp = _get_tf_layer(root, _mha_name(mha_i)); mha_i += 1
+            mp = _get_tf_layer(root, _mha_name(mha_i))
+            mha_i += 1
             mha = tblock.mha
             mha.q_layer.weight.data = torch.from_numpy(mp["q_layer/kernel:0"].T)
             mha.k_layer.weight.data = torch.from_numpy(mp["k_layer/kernel:0"].T)
@@ -745,30 +766,38 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
             )
 
             # FFN LN
-            _load_ln(tblock.ffn_norm, _get_tf_layer(root, _ln_name(ln_i))); ln_i += 1
+            _load_ln(tblock.ffn_norm, _get_tf_layer(root, _ln_name(ln_i)))
+            ln_i += 1
 
             # FFN Dense 1 (expansion)
-            _load_linear(tblock.ffn_dense1, _get_tf_layer(root, _dense_name(dense_i))); dense_i += 1
+            _load_linear(tblock.ffn_dense1, _get_tf_layer(root, _dense_name(dense_i)))
+            dense_i += 1
 
             # FFN Dense 2 (projection)
-            _load_linear(tblock.ffn_dense2, _get_tf_layer(root, _dense_name(dense_i))); dense_i += 1
+            _load_linear(tblock.ffn_dense2, _get_tf_layer(root, _dense_name(dense_i)))
+            dense_i += 1
 
         # ── UNet convs ──
         for unet in model.unet_convs:
             # BN on main path
-            _load_bn(unet.norm1, _get_tf_layer(root, _bn_name(bn_i))); bn_i += 1
+            _load_bn(unet.norm1, _get_tf_layer(root, _bn_name(bn_i)))
+            bn_i += 1
             # BN on skip path
-            _load_bn(unet.norm2, _get_tf_layer(root, _bn_name(bn_i))); bn_i += 1
+            _load_bn(unet.norm2, _get_tf_layer(root, _bn_name(bn_i)))
+            bn_i += 1
 
             # Dense on main path (if upsample_conv)
             if unet.upsample_conv:
-                _load_linear(unet.dense1, _get_tf_layer(root, _dense_name(dense_i))); dense_i += 1
+                _load_linear(unet.dense1, _get_tf_layer(root, _dense_name(dense_i)))
+                dense_i += 1
 
             # Dense on skip path
-            _load_linear(unet.dense2, _get_tf_layer(root, _dense_name(dense_i))); dense_i += 1
+            _load_linear(unet.dense2, _get_tf_layer(root, _dense_name(dense_i)))
+            dense_i += 1
 
             # Separable Conv1D
-            sp = _get_tf_layer(root, _sep_name(sep_i)); sep_i += 1
+            sp = _get_tf_layer(root, _sep_name(sep_i))
+            sep_i += 1
             # depthwise: TF (K, C, 1) -> PyTorch (C, 1, K)
             unet.sep_conv.depthwise.weight.data = torch.from_numpy(
                 np.transpose(sp["depthwise_kernel:0"], (1, 2, 0))
@@ -780,7 +809,8 @@ def _load_tf_weights(model: Shorkie, h5_path: str):
             unet.sep_conv.pointwise.bias.data = torch.from_numpy(sp["bias:0"])
 
         # ── Head (final dense) ──
-        _load_linear(model.head, _get_tf_layer(root, _dense_name(dense_i))); dense_i += 1
+        _load_linear(model.head, _get_tf_layer(root, _dense_name(dense_i)))
+        dense_i += 1
 
 
 def _load_conv1d(conv: nn.Conv1d, params: dict):
