@@ -79,6 +79,28 @@ For S. cerevisiae (R64), the species index is 109, so channel 114 is set to 1 ac
 The PyTorch model accepts standard 4-channel one-hot DNA input and expands it to the full 170-channel representation internally.
 
 
+## Equivalence to TF model
+
+Compared on 996 sequences from fold 0 (4 skipped due to corrupted H5 chunks). Differences are within float32 precision.
+
+| Metric | Value |
+|---|---|
+| Sequences compared | 996 |
+| Per-sequence Pearson R (mean) | 1.00000000 |
+| Per-sequence Pearson R (min) | 1.00000000 |
+| Absolute error (mean) | 1.64e-06 |
+| Absolute error (median) | 3.58e-07 |
+| Absolute error (p99) | 1.93e-05 |
+| Absolute error (max) | 1.95e-03 |
+| Relative error (mean) | 8.99e-05 |
+| Relative error (median) | 9.92e-07 |
+| Relative error (p99) | 1.51e-05 |
+
+Reproduce with:
+```bash
+uv run python scripts/compute_equivalence.py --fold 0
+```
+
 ## Generating predictions with the Tensorflow-based model
 
 ```bash
